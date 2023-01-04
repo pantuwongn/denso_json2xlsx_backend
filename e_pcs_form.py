@@ -196,7 +196,7 @@ def drawImage(img, row, col, rowOff, colOff):
 def drawTotalSymbols(img, rowOff, colOff):
     h, w = img.height, img.width
     size = XDRPositiveSize2D(p2e(w), p2e(h))
-    position = XDRPoint2D(p2e(615 + colOff), p2e(135 + rowOff))
+    position = XDRPoint2D(p2e(560 + colOff), p2e(135 + rowOff))
     img.anchor = AbsoluteAnchor(pos=position, ext=size)
     return img
 
