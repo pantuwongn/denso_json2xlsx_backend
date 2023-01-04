@@ -1,6 +1,6 @@
 from openpyxl import load_workbook
-from openpyxl.drawing.xdr import XDRPositiveSize2D
-from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+from openpyxl.drawing.xdr import XDRPositiveSize2D, XDRPoint2D
+from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker, AbsoluteAnchor
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.drawing.image import Image
 from openpyxl.drawing.text import TextField
@@ -107,8 +107,8 @@ def getTotalSCSymbolList(itemList: list):
         if symbolPath is None:
             raise KeyError('Unregistered sc symbol, {}-{}'.format(scSymbol['character'], scSymbol['shape']))
 
-        symbolImg = drawImage(Image(symbolPath), 6, 12, 0, 35 * i)
-        counterImg = drawImage(Image(counterPathMap[scSymbolCountDict[symbolHash]]), 6, 12, 12, (35 * i) + 23)
+        symbolImg = drawTotalSymbols(Image(symbolPath), 0, 35 * i)
+        counterImg = drawTotalSymbols(Image(counterPathMap[scSymbolCountDict[symbolHash]]), 12, (35 * i) + 23)
         imgList.append(symbolImg)
         imgList.append(counterImg)
     
@@ -191,6 +191,13 @@ def drawImage(img, row, col, rowOff, colOff):
         colOff=p2e(colOff)
     )
     img.anchor = OneCellAnchor(marker, size)
+    return img
+
+def drawTotalSymbols(img, rowOff, colOff):
+    h, w = img.height, img.width
+    size = XDRPositiveSize2D(p2e(w), p2e(h))
+    position = XDRPoint2D(p2e(615 + colOff), p2e(135 + rowOff))
+    img.anchor = AbsoluteAnchor(pos=position, ext=size)
     return img
 
 def getVerticalDashLine(height, row, col, rowOff, colOff):
