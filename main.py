@@ -17,10 +17,16 @@ api_keys = config['X_API_KEY']
 X_API_KEY = APIKeyHeader(name='X-API-Key')
 
 app = FastAPI()
+origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*']
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 
 
 def api_key_auth(x_api_key: str = Depends(X_API_KEY)):
