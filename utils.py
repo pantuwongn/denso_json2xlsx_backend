@@ -58,7 +58,7 @@ def chunk(iterable, chunk_size):
     
     return chunks
 
-def drawDashedLine(height: int):
+def drawVerticalDashedLine(height: int):
     img = Image.new("RGB", (1, height), (255, 255, 255))
 
     d = ImageDraw.Draw(img)

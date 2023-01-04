@@ -7,7 +7,7 @@ from openpyxl.drawing.text import TextField
 from openpyxl.utils.units import cm_to_EMU, pixels_to_EMU, EMU_to_pixels
 from utils import (
     getOutputFilePath,
-    drawDashedLine,
+    drawVerticalDashedLine,
     chunk,
     leftCenterAlignment,
     centerCenterAlignment,
@@ -21,6 +21,25 @@ from utils import (
 itemChunkSize = 17
 
 timingConnectorPath = 'images/timing/check-process.png'
+
+counterPathMap = {
+    1: 'images/counter/1.png',
+    2: 'images/counter/2.png',
+    3: 'images/counter/3.png',
+    4: 'images/counter/4.png',
+    5: 'images/counter/5.png',
+    6: 'images/counter/6.png',
+    7: 'images/counter/7.png',
+    8: 'images/counter/8.png',
+    9: 'images/counter/9.png',
+    10: 'images/counter/10.png',
+    11: 'images/counter/11.png',
+    12: 'images/counter/12.png',
+    13: 'images/counter/13.png',
+    14: 'images/counter/14.png',
+    15: 'images/counter/15.png',
+    16: 'images/counter/16.png',
+}
 
 checkTimingSymbolPathMap = {
     'None': 'images/timing/check-no-record.png',
@@ -80,20 +99,20 @@ def getTotalSCSymbolList(itemList: list):
 
     totalSymbolList = list(scSymbolDict.values())
 
-    print(scSymbolCountDict)
-    
     imgList = list()
-    textList = list()
     for i, scSymbol in enumerate(totalSymbolList):
-        symbolPath = scSymbolPathMap.get('{}-{}'.format(scSymbol['character'], scSymbol['shape']), None)
+        symbolHash = '{}-{}'.format(scSymbol['character'], scSymbol['shape'])
+        symbolPath = scSymbolPathMap.get(symbolHash, None)
 
         if symbolPath is None:
             raise KeyError('Unregistered sc symbol, {}-{}'.format(scSymbol['character'], scSymbol['shape']))
 
         symbolImg = drawImage(Image(symbolPath), 6, 12, 0, 35 * i)
+        counterImg = drawImage(Image(counterPathMap[scSymbolCountDict[symbolHash]]), 6, 12, 12, (35 * i) + 23)
         imgList.append(symbolImg)
+        imgList.append(counterImg)
     
-    return imgList, textList
+    return imgList
     
 
 def getProcessCapability(capabilityDict: dict):
@@ -134,14 +153,23 @@ def getParameter(parameterDict: dict):
     return result
 
 def getInterval(controlMethodDict: dict):
+    intervalText = controlMethodDict['interval']
     if controlMethodDict['100_method'] == 'Auto check':
-        return '100%\n{}'.format(controlMethodDict['interval'])
-    return controlMethodDict['interval']
+        intervalText = '100%\n{}'.format(intervalText)
+
+    if controlMethodDict['sample_no'] > 1:
+        intervalText = '{}\nn=({})'.format(intervalText, controlMethodDict['sample_no'])
+    return intervalText
 
 def getControlMethodDetail(controlMethodDict: dict):
     if controlMethodDict.get('calibration_interval', '') != '':
         return 'Calibration'
     return ''
+
+def getControlMethod(itemDict: dict):
+    if (itemDict['control_method']['100_method'] == 'None'):
+        return itemDict['control_item_type']
+    return itemDict['control_method']['100_method']
 
 def getMeasurement(itemDict: dict):
     finalText = itemDict['measurement']
@@ -165,20 +193,25 @@ def drawImage(img, row, col, rowOff, colOff):
     img.anchor = OneCellAnchor(marker, size)
     return img
 
-def drawText(text, row, col, rowOff, colOff):
-    size = XDRPositiveSize2D(p2e(20), p2e(20))
-    marker = AnchorMarker(
-        row=row,
-        col=col,
-        rowOff=p2e(rowOff),
-        colOff=p2e(colOff)
-    )
-    text.anchor = OneCellAnchor(marker, size)
-    return text
-
 def getVerticalDashLine(height, row, col, rowOff, colOff):
-    img = Image(drawDashedLine(EMU_to_pixels(c2e(height) * 0.45)))
+    img = Image(drawVerticalDashedLine(EMU_to_pixels(c2e(height) * 0.45)))
     return drawImage(img, row, col, rowOff, colOff)
+
+def getHorizontalDashLine(row, col, rowOff, colOff):
+    return drawImage(
+        Image('images/timing/dash-main-to-branch.png'),
+        row,
+        col,
+        rowOff,
+        colOff)
+
+def getCheckProcess(row, col, rowOff, colOff):
+    return drawImage(
+        Image('images/timing/check-process.png'),
+        row,
+        col,
+        rowOff,
+        colOff)
 
 def getCheckTimingSymbol(checkTiming, row, col, rowOff, colOff):
     symbolPath = checkTimingSymbolPathMap.get(checkTiming, None)
@@ -205,7 +238,9 @@ class PCSForm:
         templateSheet = self.workbook[self.templateSheetName]
         self._writeFormHeader(headerDict, templateSheet)
 
-        totalProcess = len(processList)
+        processWithCheckTimingList = self._computeProcessCheckTiming(processList)
+
+        totalProcess = len(processWithCheckTimingList)
         pageCount = 1
         for i, processDict in enumerate(processList):
             itemChunkList = chunk(processDict['items'], itemChunkSize)
@@ -229,6 +264,13 @@ class PCSForm:
                 pageCount = pageCount + 1
         
         self._saveWorkbook(fileName)
+
+    def _computeProcessCheckTiming(self, processList: list):
+        processWithCheckTimingList = list()
+        for i, processDict in enumerate(processList):
+            processCheckTimingDict = dict(**processDict)
+            processWithCheckTimingList.append(processCheckTimingDict)
+        return processWithCheckTimingList
 
     def _writeFormHeader(self, headerDict: dict, sheet: Worksheet):
         #   Write check box
@@ -282,6 +324,10 @@ class PCSForm:
         startSeparatorColumn = 3
         endSeparatorColumn = 15
 
+        #   Dash line
+        vertDashImg = getVerticalDashLine(len(itemList) * 3, 11, 1, -1, -17)
+        sheet.add_image(vertDashImg)
+
         for i, item in enumerate(itemList):
             #   Cell merging
             sheet.merge_cells('E{}:H{}'.format(startRow + (rowStep * i), startRow + (rowStep * i)+1))
@@ -293,6 +339,7 @@ class PCSForm:
             sheet.merge_cells('M{}:N{}'.format(startRow + (rowStep * i), startRow + (rowStep * i) + 2))
             sheet.merge_cells('O{}:O{}'.format(startRow + (rowStep * i), startRow + (rowStep * i) + 2))
             sheet.merge_cells('M7:O7')
+            sheet.merge_cells('A9:G9')
 
             #   Cell bordering
             sheet.cell(row=startRow + (rowStep * i) + 1, column=5).border = bottomBorder
@@ -312,7 +359,7 @@ class PCSForm:
             sheet.cell(row=(startRow + (rowStep * i) + 2), column=9).value = item['control_method'].get('calibration_interval', '')
             sheet.cell(row=(startRow + (rowStep * i) + 2), column=9).alignment = centerCenterAlignment
             sheet.cell(row=(startRow + (rowStep * i)), column=9).alignment = topCenterAlignment
-            sheet.cell(row=(startRow + (rowStep * i)), column=10).value = item['control_method']['100_method']
+            sheet.cell(row=(startRow + (rowStep * i)), column=10).value = getControlMethod(item)
             sheet.cell(row=(startRow + (rowStep * i)), column=10).alignment = centerCenterAlignment
             sheet.cell(row=(startRow + (rowStep * i)) + 2, column=10).value = getControlMethodDetail(item['control_method'])
             sheet.cell(row=(startRow + (rowStep * i)) + 2, column=10).alignment = centerCenterAlignment
@@ -324,12 +371,24 @@ class PCSForm:
             sheet.cell(row=(startRow + (rowStep * i)), column=15).value = item['remark']['ws_no']
             sheet.cell(row=(startRow + (rowStep * i)), column=15).alignment = centerCenterAlignment
 
+            vertDashImg = getVerticalDashLine(len(itemList) * 2, 13, 1, -1, -5)
+            sheet.add_image(vertDashImg)
+
             #   Imaging
             scSymbolImgList = getSCSymbolList(item['sc_symbols'], startRow + (rowStep * i), 3)
             for scSymbol in scSymbolImgList:
                 sheet.add_image(scSymbol)
 
-            totalScSymbolList, totalTextList = getTotalSCSymbolList(itemList)
+            horizontalControlItemImg = getHorizontalDashLine(
+                startRow + (rowStep * i), 1, 7.5, -4
+            )
+            sheet.add_image(horizontalControlItemImg)
+            horizontalControlItemImg = getHorizontalDashLine(
+                startRow + (rowStep * i), 1, 7.5, -10
+            )
+            sheet.add_image(horizontalControlItemImg)
+
+            totalScSymbolList = getTotalSCSymbolList(itemList)
             for totalScSymbol in totalScSymbolList:
                 sheet.add_image(totalScSymbol)
 
@@ -338,9 +397,10 @@ class PCSForm:
                 startRow + (rowStep * i), 1, 0, 5)
             sheet.add_image(controlItemSymbolImg)
 
-        #   Dash line
-        vertDashImg = getVerticalDashLine(len(itemList) * 3, 11, 1, -1, -20)
-        sheet.add_image(vertDashImg)
+            checkProcessImage = getCheckProcess(
+                startRow + (rowStep * i), 1, 0, -25
+            )
+            sheet.add_image(checkProcessImage)
 
     def _saveWorkbook(self, fileName: str):
         templateSheet = self.workbook[self.templateSheetName]
