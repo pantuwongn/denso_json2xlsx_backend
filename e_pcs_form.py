@@ -13,6 +13,7 @@ from utils import (
     centerCenterAlignment,
     topCenterAlignment,
     topLeftAlignment,
+    headerNormalStyle,
     textNormalStyle,
     bottomBorder,
     bottomRightBorder
@@ -84,6 +85,18 @@ def getSCSymbolList(scSymbolList: list, rowStart: int, maxRow: int):
     return imgList
 
 def getTotalSCSymbolList(itemList: list):
+    def drawTotalScSymbol(img, rowOff, colOff):
+        h, w = img.height, img.width
+        size = XDRPositiveSize2D(p2e(w), p2e(h))
+        position = XDRPoint2D(p2e(520 + colOff), p2e(135 + rowOff))
+        img.anchor = AbsoluteAnchor(pos=position, ext=size)
+        return img
+    def drawTotalCountSymbol(img, rowOff, colOff):
+        h, w = img.height, img.width
+        size = XDRPositiveSize2D(p2e(w), p2e(h))
+        position = XDRPoint2D(p2e(520 + colOff), p2e(135 + rowOff))
+        img.anchor = AbsoluteAnchor(pos=position, ext=size)
+        return img
     scSymbolDict = dict()
     scSymbolCountDict = dict()
     for item in itemList:
@@ -107,13 +120,12 @@ def getTotalSCSymbolList(itemList: list):
         if symbolPath is None:
             raise KeyError('Unregistered sc symbol, {}-{}'.format(scSymbol['character'], scSymbol['shape']))
 
-        symbolImg = drawTotalSymbols(Image(symbolPath), 0, 35 * i)
-        counterImg = drawTotalSymbols(Image(counterPathMap[scSymbolCountDict[symbolHash]]), 12, (35 * i) + 23)
+        symbolImg = drawTotalScSymbol(Image(symbolPath), 0, 33*i)
+        counterImg = drawTotalCountSymbol(Image(counterPathMap[scSymbolCountDict[symbolHash]]), 12, (33 * i) + 23)
         imgList.append(symbolImg)
         imgList.append(counterImg)
     
     return imgList
-    
 
 def getProcessCapability(capabilityDict: dict):
     x_bar = 'xbar : {}'.format(capabilityDict['x_bar']) if capabilityDict['x_bar'].strip() != '' else ''
@@ -193,13 +205,6 @@ def drawImage(img, row, col, rowOff, colOff):
     img.anchor = OneCellAnchor(marker, size)
     return img
 
-def drawTotalSymbols(img, rowOff, colOff):
-    h, w = img.height, img.width
-    size = XDRPositiveSize2D(p2e(w), p2e(h))
-    position = XDRPoint2D(p2e(550 + colOff), p2e(135 + rowOff))
-    img.anchor = AbsoluteAnchor(pos=position, ext=size)
-    return img
-
 def getVerticalDashLine(height, row, col, rowOff, colOff):
     img = Image(drawVerticalDashedLine(EMU_to_pixels(c2e(height) * 0.45)))
     return drawImage(img, row, col, rowOff, colOff)
@@ -245,13 +250,11 @@ class PCSForm:
         templateSheet = self.workbook[self.templateSheetName]
         self._writeFormHeader(headerDict, templateSheet)
 
-        processWithCheckTimingList = self._computeProcessCheckTiming(processList)
-
-        totalProcess = len(processWithCheckTimingList)
+        totalProcess = len(processList)
         pageCount = 1
         for i, processDict in enumerate(processList):
             itemChunkList = chunk(processDict['items'], itemChunkSize)
-            totalChunk = len(itemChunkList)-1 if len(itemChunkList) > 1 else 1
+            totalChunk = len(itemChunkList) if len(itemChunkList) > 1 else 1
             for j, itemChunk in enumerate(itemChunkList):
                 itemSheet = self.workbook.copy_worksheet(templateSheet)
                 self._writeFormProcess(
@@ -266,18 +269,12 @@ class PCSForm:
                 self._writeProcessItem(
                     itemChunkSize * (j),
                     itemSheet,
-                    itemChunk
+                    itemChunk,
+                    processDict['items']
                 )
                 pageCount = pageCount + 1
         
         self._saveWorkbook(fileName)
-
-    def _computeProcessCheckTiming(self, processList: list):
-        processWithCheckTimingList = list()
-        for i, processDict in enumerate(processList):
-            processCheckTimingDict = dict(**processDict)
-            processWithCheckTimingList.append(processCheckTimingDict)
-        return processWithCheckTimingList
 
     def _writeFormHeader(self, headerDict: dict, sheet: Worksheet):
         #   Write check box
@@ -287,16 +284,16 @@ class PCSForm:
 
         sheet.cell(row=7, column=1).value = headerDict['line']
         sheet.cell(row=7, column=1).alignment = leftCenterAlignment
-        sheet.cell(row=7, column=1).font = textNormalStyle
+        sheet.cell(row=7, column=1).font = headerNormalStyle
         sheet.cell(row=7, column=8).value = headerDict['assy_name']
         sheet.cell(row=7, column=8).alignment = leftCenterAlignment
-        sheet.cell(row=7, column=8).font = textNormalStyle
+        sheet.cell(row=7, column=8).font = headerNormalStyle
         sheet.cell(row=9, column=8).value = headerDict['part_name']
         sheet.cell(row=9, column=8).alignment = leftCenterAlignment
-        sheet.cell(row=9, column=8).font = textNormalStyle
+        sheet.cell(row=9, column=8).font = headerNormalStyle
         sheet.cell(row=9, column=13).value = headerDict['customer']
         sheet.cell(row=9, column=13).alignment = centerCenterAlignment
-        sheet.cell(row=9, column=13).font = textNormalStyle
+        sheet.cell(row=9, column=13).font = headerNormalStyle
 
         sheet.cell(row=63, column=7).value = '                   Issue to ❑ Insp.    ❑ Prod.(___________)'
 
@@ -323,17 +320,198 @@ class PCSForm:
             subTotal
         )
         sheet.cell(row=9, column=1).alignment = leftCenterAlignment
-        sheet.cell(row=9, column=1).font = textNormalStyle
+        sheet.cell(row=9, column=1).font = headerNormalStyle
 
-    def _writeProcessItem(self, startNumber:int, sheet: Worksheet, itemList: list):
+    def _writeProcessItem(self, startNumber:int, sheet: Worksheet, itemList: list, totalItemList: list):
         startRow = 12
         rowStep = 3
         startSeparatorColumn = 3
         endSeparatorColumn = 15
+        
+        isInheritGroup = False
+        groupDashValue = None
+        groupDashStart = None
+        groupDashLength = None
+
+        duringList = list()
+        beforeList = list()
+        afterList = list()
+
+        for i, itemDict in enumerate(totalItemList):
+            if itemDict['check_timing'] == 'During':
+                duringList.append(i)
+            elif itemDict['check_timing'] == 'Before':
+                beforeList.append(i)
+            elif itemDict['check_timing'] == 'After':
+                afterList.append(i)
 
         #   Dash line
-        vertDashImg = getVerticalDashLine(len(itemList) * 3, 11, 1, -1, -17)
-        sheet.add_image(vertDashImg)
+        # vertDashImg = getVerticalDashLine(len(itemList) * 3, 11, 0, -3, 8)
+        # sheet.add_image(vertDashImg)
+
+        landProcessIndex = None
+        landProcessRow = None
+
+        if len(duringList) > 0:
+            if len(beforeList) == 0 and len(afterList) == 0:
+                landIndex = len(totalItemList) / 2
+                if landIndex < len(itemList) + startNumber - 1:
+                    horizontalControlItemImg = getHorizontalDashLine(
+                        startRow + (rowStep * (landIndex - startNumber)), 0, 7, 10
+                    )
+                    sheet.add_image(horizontalControlItemImg)
+                    landProcessRow = startRow + (rowStep * (landIndex - startNumber))
+                    landProcessIndex = int(landIndex)
+            
+            elif len(beforeList) == 0:
+                if startNumber == 0:
+                    horizontalControlItemImg = getHorizontalDashLine(
+                        startRow, 0, 7, 10
+                    )
+                    sheet.add_image(horizontalControlItemImg)
+                    landProcessRow = startRow
+                    landProcessIndex = 0
+
+            else:
+                landIndex = duringList[int(len(duringList) / 2)]
+                if landIndex < len(itemList) + startNumber - 1:
+                    horizontalControlItemImg = getHorizontalDashLine(
+                        startRow + (rowStep * (landIndex - startNumber)), 0, 7, 10
+                    )
+                    sheet.add_image(horizontalControlItemImg)
+                    landProcessRow = startRow + (rowStep * (landIndex - startNumber))
+                    landProcessIndex = int(landIndex)
+        else:
+            if len(beforeList) == 0:
+                if startNumber == 0:
+                    landProcessRow = startRow
+                    landProcessIndex = 0
+            elif len(afterList) == 0:
+                if startNumber > 0:
+                    landProcessRow = startRow + (rowStep * (len(itemList) - 1) + 1)
+                    landProcessIndex = len(itemList) - 1
+            else:
+                lastBefore = beforeList[-1]
+                firstAfterIndex = afterList[0]
+                landIndex = (lastBefore + firstAfterIndex) / 2
+
+                if landIndex < len(itemList) + startNumber - 1:
+                    landProcessRow = startRow + (rowStep * (landIndex - startNumber))
+                    landProcessIndex = int(landIndex)
+
+        def groupNodeList(nodeList: list):
+            groupDict = dict()
+            i = 0
+            for node in nodeList:
+                if groupDict.get(i, None) is None:
+                    groupDict[i] = [node]
+                else:
+                    if groupDict[i][-1] == node - 1:
+                        groupDict[i].append(node)
+                    else:
+                        i += 1
+                        groupDict[i] = [node]
+            return list(groupDict.values())
+
+        beforeGroup = groupNodeList(beforeList)
+        duringGroup = groupNodeList(duringList)
+        afterGroup = groupNodeList(afterList)
+
+        if  (len(duringGroup) > 0 and duringGroup[-1][-1] > (startNumber + 1) * itemChunkSize) or \
+            (len(beforeGroup) > 0 and beforeGroup[-1][-1] > (startNumber + 1) * itemChunkSize) or \
+            (len(afterGroup) > 0 and afterGroup[-1][-1] > (startNumber + 1) * itemChunkSize):
+            vertDashImg = getVerticalDashLine((itemChunkSize - landProcessIndex) * 2.88, startRow + (landProcessIndex * rowStep), 0, 8, 8)
+            sheet.add_image(vertDashImg)
+
+        for duringNodeList in duringGroup:
+            drawLineLength = None
+            drawLineRow = None
+            drawConnectorRow = None
+            vertRowOff = 8
+            vertColOff = 8
+
+            if len(duringNodeList) == 1:
+                if (duringNodeList[0] < len(itemList) + startNumber):
+                    drawConnectorRow = startRow + (rowStep * (duringNodeList[0] - startNumber))
+                
+                if landProcessIndex < startNumber:
+                    if duringNodeList[0] >= startNumber:
+                        adjustedValue = duringNodeList[0] - startNumber + 1
+                        drawLineLength = ((adjustedValue - 1) * 2.99 if adjustedValue > 0 else 0) + 1.5
+                        drawLineRow = startRow - 1
+                        vertRowOff = 0
+
+            if  drawLineLength is not None and \
+                drawLineRow is not None:
+                vertDashImg = getVerticalDashLine(drawLineLength, drawLineRow, 0, vertRowOff, vertColOff)
+                sheet.add_image(vertDashImg)
+            
+            if drawConnectorRow is not None:
+                horizontalControlItemImg = getHorizontalDashLine(
+                    drawConnectorRow, 0, 7, 10
+                )
+                sheet.add_image(horizontalControlItemImg)
+
+        for afterNodeList in afterGroup:
+            drawLineLength = None
+            drawLineRow = None
+            drawConnectorRow = None
+            vertRowOff = 8
+            vertColOff = 8
+
+            afterCenterValue = afterNodeList[0] if len(afterNodeList) == 1 else afterNodeList[int(len(afterNodeList) / 2)]
+            if landProcessIndex >= startNumber:
+                drawLineLength = (afterCenterValue - landProcessIndex) * 2.99
+                drawLineRow = startRow + (rowStep * landProcessIndex)
+                drawConnectorRow = startRow + (rowStep * afterCenterValue)
+            elif afterNodeList[-1] >= startNumber:
+                adjustedCenterValue = ((afterCenterValue if afterCenterValue >= startNumber else startNumber) - startNumber)
+                drawLineLength = ((adjustedCenterValue - 1) * 2.99 if adjustedCenterValue > 0 else 0) + 1.5
+                drawLineRow = startRow - 1
+                drawConnectorRow = startRow + (rowStep * adjustedCenterValue)
+                vertRowOff = 0
+
+            if  drawLineLength is not None and \
+                drawLineRow is not None:
+                vertDashImg = getVerticalDashLine(drawLineLength, drawLineRow, 0, vertRowOff, vertColOff)
+                sheet.add_image(vertDashImg)
+            
+            if drawConnectorRow is not None:
+                horizontalControlItemImg = getHorizontalDashLine(
+                    drawConnectorRow, 0, 7, 10
+                )
+                sheet.add_image(horizontalControlItemImg)
+
+        for beforeNodeList in beforeGroup:
+            drawLineLength = None
+            drawLineRow = None
+            drawConnectorRow = None
+
+            beforeCenterValue = beforeNodeList[0] if len(beforeNodeList) == 1 else beforeNodeList[int(len(beforeNodeList) / 2)]
+            if landProcessIndex >= startNumber:
+                drawLineLength = abs(beforeCenterValue - landProcessIndex) * 2.99
+                drawLineRow = startRow + (rowStep * beforeCenterValue)
+                drawConnectorRow = startRow + (rowStep * beforeCenterValue)
+            elif beforeNodeList[-1] >= startNumber:
+                adjustedCenterValue = ((beforeCenterValue if beforeCenterValue >= startNumber else startNumber) - startNumber)
+                drawLineLength = ((adjustedCenterValue - 1) * 2.99 if adjustedCenterValue > 0 else 0) + 1.5
+                drawLineRow = startRow
+                drawConnectorRow = startRow + (rowStep * beforeCenterValue)
+
+            if  drawLineLength is not None and \
+                drawLineRow is not None:
+                vertDashImg = getVerticalDashLine(drawLineLength, drawLineRow, 0, 8, 8)
+                sheet.add_image(vertDashImg)
+            if drawConnectorRow is not None:
+                horizontalControlItemImg = getHorizontalDashLine(
+                    drawConnectorRow, 0, 7, 10
+                )
+                sheet.add_image(horizontalControlItemImg)
+
+        checkProcessImage = getCheckProcess(
+            landProcessRow, 0, 0, 0
+        )
+        sheet.add_image(checkProcessImage)
 
         for i, item in enumerate(itemList):
             #   Cell merging
@@ -359,39 +537,101 @@ class PCSForm:
             #   Cell values
             sheet.cell(row=startRow + (rowStep * i), column=4).value = startNumber + (i + 1)
             sheet.cell(row=startRow + (rowStep * i), column=4).alignment = centerCenterAlignment
+            sheet.cell(row=startRow + (rowStep * i), column=4).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=5).value = getParameter(item['parameter'])
+            sheet.cell(row=(startRow + (rowStep * i)), column=5).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i) + 2), column=5).value = getMeasurement(item)
+            sheet.cell(row=(startRow + (rowStep * i) + 2), column=5).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=5).alignment = topLeftAlignment
             sheet.cell(row=(startRow + (rowStep * i)), column=9).value = getInterval(item['control_method'])
+            sheet.cell(row=(startRow + (rowStep * i)), column=9).font = textNormalStyle
+            sheet.cell(row=(startRow + (rowStep * i)), column=9).alignment = topCenterAlignment
             sheet.cell(row=(startRow + (rowStep * i) + 2), column=9).value = item['control_method'].get('calibration_interval', '')
             sheet.cell(row=(startRow + (rowStep * i) + 2), column=9).alignment = centerCenterAlignment
-            sheet.cell(row=(startRow + (rowStep * i)), column=9).alignment = topCenterAlignment
+            sheet.cell(row=(startRow + (rowStep * i) + 2), column=9).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=10).value = getControlMethod(item)
             sheet.cell(row=(startRow + (rowStep * i)), column=10).alignment = centerCenterAlignment
+            sheet.cell(row=(startRow + (rowStep * i)), column=10).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)) + 2, column=10).value = getControlMethodDetail(item['control_method'])
             sheet.cell(row=(startRow + (rowStep * i)) + 2, column=10).alignment = centerCenterAlignment
+            sheet.cell(row=(startRow + (rowStep * i)) + 2, column=10).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=11).value = item['control_method']['in_charge']
             sheet.cell(row=(startRow + (rowStep * i)), column=11).alignment = centerCenterAlignment
+            sheet.cell(row=(startRow + (rowStep * i)), column=11).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=12).value = getProcessCapability(item['initial_p_capability'])
+            sheet.cell(row=(startRow + (rowStep * i)), column=12).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=13).value = item['remark']['remark']
             sheet.cell(row=(startRow + (rowStep * i)), column=13).alignment = topLeftAlignment
+            sheet.cell(row=(startRow + (rowStep * i)), column=13).font = textNormalStyle
             sheet.cell(row=(startRow + (rowStep * i)), column=15).value = item['remark']['ws_no']
             sheet.cell(row=(startRow + (rowStep * i)), column=15).alignment = centerCenterAlignment
-
-            vertDashImg = getVerticalDashLine(len(itemList) * 2, 13, 1, -1, -5)
-            sheet.add_image(vertDashImg)
+            sheet.cell(row=(startRow + (rowStep * i)), column=15).font = textNormalStyle
 
             #   Imaging
+
+            #   Grouping
+            currentIndexInTotal = i + startNumber
+            if i == 0 and startNumber != 0 and totalItemList[currentIndexInTotal - 1]['check_timing'] == item['check_timing']:
+                groupDashValue = item['check_timing']
+                groupDashStart = 0
+                groupDashLength = 0
+                isInheritGroup = True
+
+            if groupDashValue == item['check_timing']:
+                groupDashLength += 1
+
+            if groupDashValue is None:
+                groupDashValue = item['check_timing']
+                groupDashStart = i
+                groupDashLength = 1
+            
+            if currentIndexInTotal + 1 >= len(totalItemList):
+                if groupDashLength > 1:
+                    if isInheritGroup:
+                        print('in')
+                        vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3 + 1.5, startRow + (rowStep * groupDashStart), 1, 8 - 28, 4)
+                    else:
+                        vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3, startRow + (rowStep * groupDashStart), 1, 8, 4)
+                    sheet.add_image(vertDashImg)
+                groupDashValue = None
+                groupDashStart = None
+                groupDashLength = None
+                isInheritGroup = False
+
+            elif i + 1 >= len(itemList):
+                if groupDashLength > 1:
+                    if isInheritGroup:
+                        print('in')
+                        vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3 + 1.5 + 1.5 if currentIndexInTotal + 1 < len(totalItemList) and groupDashValue == totalItemList[currentIndexInTotal + 1]['check_timing'] else 0, startRow + (rowStep * groupDashStart), 1, 8 - 28, 4)
+                    else:
+                        vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3 + 1.5 if currentIndexInTotal + 1 < len(totalItemList) and groupDashValue == totalItemList[currentIndexInTotal + 1]['check_timing'] else 0, startRow + (rowStep * groupDashStart), 1, 8, 4)
+
+                    sheet.add_image(vertDashImg)
+                groupDashValue = None
+                groupDashStart = None
+                groupDashLength = None
+                isInheritGroup = False
+
+            elif i + 1 < len(itemList):
+                if itemList[i + 1]['check_timing'] != groupDashValue:
+                    if groupDashLength > 1:
+                        if isInheritGroup:
+                            print('in')
+                            vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3 + 1.5, startRow + (rowStep * groupDashStart), 1, 8 - 28, 4)
+                        else:
+                            vertDashImg = getVerticalDashLine((groupDashLength * 2.99) - 3, startRow + (rowStep * groupDashStart), 1, 8, 4)
+                        sheet.add_image(vertDashImg)
+                    groupDashValue = None
+                    groupDashStart = None
+                    groupDashLength = None
+                    isInheritGroup = False
+
             scSymbolImgList = getSCSymbolList(item['sc_symbols'], startRow + (rowStep * i), 3)
             for scSymbol in scSymbolImgList:
                 sheet.add_image(scSymbol)
 
             horizontalControlItemImg = getHorizontalDashLine(
-                startRow + (rowStep * i), 1, 7.5, -4
-            )
-            sheet.add_image(horizontalControlItemImg)
-            horizontalControlItemImg = getHorizontalDashLine(
-                startRow + (rowStep * i), 1, 7.5, -10
+            startRow + (rowStep * i), 1, 7.5, 3
             )
             sheet.add_image(horizontalControlItemImg)
 
@@ -401,13 +641,8 @@ class PCSForm:
 
             controlItemSymbolImg = getCheckTimingSymbol(
                 item['control_item_type'],
-                startRow + (rowStep * i), 1, 0, 5)
+                startRow + (rowStep * i), 1, 0, 10)
             sheet.add_image(controlItemSymbolImg)
-
-            checkProcessImage = getCheckProcess(
-                startRow + (rowStep * i), 1, 0, -25
-            )
-            sheet.add_image(checkProcessImage)
 
     def _saveWorkbook(self, fileName: str):
         templateSheet = self.workbook[self.templateSheetName]
